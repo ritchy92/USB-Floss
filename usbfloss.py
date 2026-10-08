@@ -2,7 +2,8 @@
 """
 USBFloss — Nettoyer les fichiers macOS inutiles sur une clé USB.
 
-Version 0.2 : suppression réelle avec confirmation simple.
+Version 0.3 : mode interactif, filtre des volumes Time Machine
+et limite de taille pour ne proposer que les petites clés USB.
 """
 
 import argparse
@@ -27,6 +28,18 @@ JUNK_DIRS = {
 JUNK_PREFIXES = (
     "._",
 )
+
+# Sur macOS, les volumes externes sont montés dans /Volumes.
+VOLUMES_DIR = Path("/Volumes")
+
+# Taille maximale d'un volume proposé au nettoyage (en Go).
+# Au-delà, on considère que c'est un disque de stockage, pas une clé.
+MAX_VOLUME_SIZE_GB = 256
+
+# Volumes système à ne jamais proposer
+EXCLUDED_NAMES = {
+    "com.apple.TimeMachine.localsnapshots",
+}
 
 
 def is_junk(path: Path) -> bool:
@@ -65,11 +78,114 @@ def delete(paths: list[Path], root: Path) -> tuple[int, int]:
     return ok, ko
 
 
+def is_time_machine(volume: Path) -> bool:
+    """Détecte si un volume sert à Time Machine."""
+    # Time Machine HFS+ : dossier Backups.backupdb à la racine
+    if (volume / "Backups.backupdb").exists():
+        return True
+    # Time Machine APFS : fichier marqueur à la racine
+    if (volume / ".com.apple.timemachine.donotpresent").exists():
+        return True
+    return False
+
+
+def volume_size_gb(volume: Path) -> float | None:
+    """Renvoie la taille totale du volume en Go, ou None si indisponible."""
+    try:
+        import shutil as _shutil
+        total, _used, _free = _shutil.disk_usage(volume)
+        return total / (1024 ** 3)
+    except OSError:
+        return None
+
+
+def list_volumes() -> list[tuple[Path, float]]:
+    """Renvoie la liste des volumes éligibles : (chemin, taille en Go).
+
+    Exclut : disques système, Time Machine, volumes > MAX_VOLUME_SIZE_GB.
+    """
+    import os
+
+    if not VOLUMES_DIR.is_dir():
+        return []
+
+    volumes = []
+    for entry in sorted(VOLUMES_DIR.iterdir()):
+        if not entry.is_dir():
+            continue
+        # Disque de démarrage (lien symbolique)
+        if os.path.islink(entry):
+            continue
+        # Volumes système connus
+        if entry.name in EXCLUDED_NAMES:
+            continue
+        # Time Machine
+        if is_time_machine(entry):
+            continue
+        # Taille
+        size = volume_size_gb(entry)
+        if size is None:
+            continue
+        if size > MAX_VOLUME_SIZE_GB:
+            continue
+
+        volumes.append((entry, size))
+
+    return volumes
+
+
+def format_size(size_gb: float) -> str:
+    """Formate une taille en Go ou To pour l'affichage."""
+    if size_gb >= 1000:
+        return f"{size_gb / 1000:.1f} To"
+    return f"{size_gb:.0f} Go"
+
+
+def choose_volume() -> Path | None:
+    """Propose à l'utilisateur de choisir un volume. Renvoie None si annulé."""
+    volumes = list_volumes()
+
+    if not volumes:
+        print("Aucun volume éligible détecté.")
+        print("Branche une clé USB ou un petit disque externe, puis relance.")
+        print(f"(Seuls les volumes de moins de {MAX_VOLUME_SIZE_GB} Go sont proposés.)")
+        return None
+
+    print("Volumes détectés :")
+    for i, (vol, size) in enumerate(volumes, start=1):
+        print(f"  {i}. {vol.name:<20} ({format_size(size)})")
+    print()
+
+    while True:
+        answer = input(f"Quel volume nettoyer ? [1-{len(volumes)}] ").strip()
+
+        if not answer:
+            print("Annulé.")
+            return None
+
+        try:
+            choice = int(answer)
+        except ValueError:
+            print("Réponse invalide. Tape un numéro.")
+            continue
+
+        if 1 <= choice <= len(volumes):
+            return volumes[choice - 1][0]
+
+        print(f"Numéro hors plage. Choisis entre 1 et {len(volumes)}.")
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Nettoie les fichiers macOS inutiles sur une clé USB.",
     )
-    parser.add_argument("chemin", type=Path, help="Dossier à nettoyer (ex : /Volumes/MACLE)")
+    parser.add_argument(
+        "chemin",
+        type=Path,
+        nargs="?",
+        help="Dossier à nettoyer (ex : /Volumes/DRIVE64). "
+             "Si omis, mode interactif.",
+    )
     parser.add_argument("--delete", action="store_true",
                         help="Supprime réellement les fichiers (sinon : aperçu).")
     parser.add_argument("--yes", action="store_true",
@@ -79,12 +195,20 @@ def parse_args() -> argparse.Namespace:
 
 def main():
     args = parse_args()
-    root = args.chemin.resolve()
+
+    # Choix du volume : direct ou interactif
+    if args.chemin is None:
+        root = choose_volume()
+        if root is None:
+            sys.exit(0)
+    else:
+        root = args.chemin.resolve()
 
     if not root.is_dir():
         print(f"Erreur : {root} n'est pas un dossier valide.")
         sys.exit(1)
 
+    print()
     print(f"Analyse de : {root}")
     print()
 
