@@ -1,4 +1,4 @@
-# USBFloss
+# USB-Floss
 
 Un petit utilitaire qui nettoie les fichiers inutiles créés par macOS
 sur une clé USB ou un disque externe.
@@ -27,7 +27,7 @@ propre.
 
 ### Mode interactif (le plus simple)
 
-    python3 usbfloss.py
+    python3 USB-Floss.py
 
 Le script liste les volumes éligibles et te demande lequel nettoyer :
 
@@ -40,7 +40,7 @@ Aucune commande à retenir, aucun chemin à taper.
 
 ### Mode direct (chemin précis)
 
-    python3 usbfloss.py /Volumes/NOM_DE_LA_CLE
+    python3 USB-Floss.py /Volumes/NOM_DE_LA_CLE
 
 Utile si tu connais déjà le chemin de ta clé, ou si tu veux cibler
 un volume qui n'est pas proposé par le mode interactif (voir plus bas).
@@ -55,15 +55,15 @@ suppriment rien.
 
 Ajoute --delete pour supprimer réellement :
 
-    python3 usbfloss.py --delete
-    python3 usbfloss.py /Volumes/NOM_DE_LA_CLE --delete
+    python3 USB-Floss.py --delete
+    python3 USB-Floss.py /Volumes/NOM_DE_LA_CLE --delete
 
 Le script affiche la liste, puis demande confirmation avant de
 supprimer.
 
 ### Nettoyage sans confirmation
 
-    python3 usbfloss.py /Volumes/NOM_DE_LA_CLE --delete --yes
+    python3 USB-Floss.py /Volumes/NOM_DE_LA_CLE --delete --yes
 
 Pour automatiser (scripts, cron, etc.).
 
@@ -77,7 +77,7 @@ automatiquement exclus :
 - Les volumes système (com.apple.TimeMachine.localsnapshots)
 - Les volumes de plus de 256 Go
 
-Cette limite existe parce qu'USBFloss est prévu pour les clés USB
+Cette limite existe parce qu'USB-Floss est prévu pour les clés USB
 et les petits disques externes qui servent de navette entre Mac et
 PC. Un gros disque de stockage (1 To ou plus) n'a pas vocation à
 être nettoyé de cette façon : il est utilisé différemment, et le
@@ -87,7 +87,7 @@ n'en vaut pas la peine.
 Pour cibler malgré tout un gros volume, utilise le mode direct en
 indiquant son chemin :
 
-    python3 usbfloss.py /Volumes/NOM_DU_GROS_DISQUE
+    python3 USB-Floss.py /Volumes/NOM_DU_GROS_DISQUE
 
 Le script fera le scan normalement, sans filtre de taille. Il restera
 en mode aperçu tant que tu n'ajoutes pas --delete.
@@ -110,7 +110,7 @@ Sur Linux, /media/utilisateur/NOM_DE_LA_CLE ou /mnt/.
 
 - macOS recrée automatiquement .Spotlight-V100 et .fseventsd quand la
   clé est rebranchée sur un Mac. Il est donc conseillé de relancer
-  USBFloss juste avant de donner la clé à quelqu'un qui utilise
+  USB-Floss juste avant de donner la clé à quelqu'un qui utilise
   Windows.
 - Les fichiers supprimés ne sont pas mis à la corbeille : la suppression
   est définitive. Les fichiers concernés n'ayant aucune valeur (ce sont
