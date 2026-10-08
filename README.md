@@ -25,23 +25,78 @@ propre.
 
 ## Utilisation
 
-Aperçu (ne supprime rien) :
+### Mode interactif (le plus simple)
+
+    python3 usbfloss.py
+
+Le script liste les volumes éligibles et te demande lequel nettoyer :
+
+    Volumes détectés :
+      1. DRIVE64            (32 Go)
+
+    Quel volume nettoyer ? [1-1]
+
+Aucune commande à retenir, aucun chemin à taper.
+
+### Mode direct (chemin précis)
 
     python3 usbfloss.py /Volumes/NOM_DE_LA_CLE
 
-Nettoyage avec confirmation :
+Utile si tu connais déjà le chemin de ta clé, ou si tu veux cibler
+un volume qui n'est pas proposé par le mode interactif (voir plus bas).
 
+### Aperçu (ne supprime rien)
+
+Par défaut, toutes les commandes ci-dessus sont en mode aperçu :
+elles affichent la liste des fichiers parasites trouvés, mais ne
+suppriment rien.
+
+### Nettoyage avec confirmation
+
+Ajoute --delete pour supprimer réellement :
+
+    python3 usbfloss.py --delete
     python3 usbfloss.py /Volumes/NOM_DE_LA_CLE --delete
 
-Nettoyage sans confirmation :
+Le script affiche la liste, puis demande confirmation avant de
+supprimer.
+
+### Nettoyage sans confirmation
 
     python3 usbfloss.py /Volumes/NOM_DE_LA_CLE --delete --yes
+
+Pour automatiser (scripts, cron, etc.).
+
+## Volumes proposés en mode interactif
+
+Le mode interactif ne propose pas tous les volumes montés. Sont
+automatiquement exclus :
+
+- Le disque de démarrage
+- Les volumes Time Machine (détectés via leur marqueur système)
+- Les volumes système (com.apple.TimeMachine.localsnapshots)
+- Les volumes de plus de 256 Go
+
+Cette limite existe parce qu'USBFloss est prévu pour les clés USB
+et les petits disques externes qui servent de navette entre Mac et
+PC. Un gros disque de stockage (1 To ou plus) n'a pas vocation à
+être nettoyé de cette façon : il est utilisé différemment, et le
+risque de manipuler un volume contenant des données importantes
+n'en vaut pas la peine.
+
+Pour cibler malgré tout un gros volume, utilise le mode direct en
+indiquant son chemin :
+
+    python3 usbfloss.py /Volumes/NOM_DU_GROS_DISQUE
+
+Le script fera le scan normalement, sans filtre de taille. Il restera
+en mode aperçu tant que tu n'ajoutes pas --delete.
 
 ## Prérequis
 
 Python 3.10 ou supérieur. Aucune dépendance externe.
 
-## Comment retrouver le chemin de la clé
+## Comment retrouver le chemin d'une clé
 
 Sur macOS, les clés sont montées dans /Volumes/. Pour voir la liste :
 
@@ -55,7 +110,8 @@ Sur Linux, /media/utilisateur/NOM_DE_LA_CLE ou /mnt/.
 
 - macOS recrée automatiquement .Spotlight-V100 et .fseventsd quand la
   clé est rebranchée sur un Mac. Il est donc conseillé de relancer
-  USBFloss juste avant de donner la clé à quelqu'un qui utilise Windows.
+  USBFloss juste avant de donner la clé à quelqu'un qui utilise
+  Windows.
 - Les fichiers supprimés ne sont pas mis à la corbeille : la suppression
   est définitive. Les fichiers concernés n'ayant aucune valeur (ce sont
   des caches), il n'y a pas de risque de perte de données.
