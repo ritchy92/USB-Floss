@@ -5,12 +5,14 @@
 # ============================================================
 
 import os
+import subprocess
 import sys
 
 import customtkinter as ctk
 from PIL import Image
+from tkinter import messagebox
 
-from usbfloss import list_volumes, format_size, scan
+from usbfloss import list_volumes, format_size, scan, delete
 
 # ------------------------------------------------------------------
 # Configuration
@@ -41,6 +43,7 @@ CYAN_BRIGHT = "#3BFCFF"
 CYAN_HOVER = "#23A7C8"
 TEXT_WHITE = "#FFFFFF"
 TEXT_GREY = "#8A9AA9"
+BTN_DISABLED = "#3A4A55"
 
 # Dimensions des boutons
 BTN_W = 100
@@ -48,31 +51,21 @@ BTN_H = 34
 BTN_SMALL_W = 90
 BTN_SMALL_H = 34
 
-# Constante pour la hauteur de la combo
 COMBO_HEIGHT = BTN_H
 
 # Padding
 COMBO_PADDING_X = 8
 LABEL_PADDING_BOTTOM = 4
 BTN_SPACING = 4
-FRAME_PADDING = 30         # marge uniforme autour des blocs
-FRAME_PADDING_BOTTOM = 60   # marge basse (3x la marge standard)
+FRAME_PADDING = 30
+FRAME_PADDING_BOTTOM = 60
 
 # Chemin du logo
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 LOGO_PATH = os.path.join(SCRIPT_DIR, "logo.png")
 
-# ------------------------------------------------------------------
-# LOGO
-# Espace réservé pour le logo : largeur 140 px, hauteur ~140 px
-# (l'image est carrée dans le fichier logo.png, elle s'affiche à 140x140)
-# ------------------------------------------------------------------
 LOGO_WIDTH = 140
-
-# Largeur de la combo volume
 COMBO_W = 200
-
-# Intervalle de scan automatique des volumes (en ms)
 VOLUME_CHECK_INTERVAL = 2000
 
 
@@ -84,23 +77,33 @@ class USBFlossApp(ctk.CTk):
         super().__init__()
 
         self.title("USB-Floss")
-        self.geometry("440x620")
+        self.geometry("480x620")
         self.resizable(False, True)
-        self.minsize(440, 540)
+        self.minsize(480, 540)
         self.configure(fg_color=BG_MAIN)
 
         self._logo_image = None
         self.volumes = []
         self._last_volumes_state = None
+        self.current_junk = []
+        self.current_volume = None
+
+        # ----- Conteneur principal avec liseré cyan -----
+        self.main_container = ctk.CTkFrame(
+            self,
+            fg_color=BG_MAIN,
+            corner_radius=0,
+            border_color=CYAN_BRIGHT,
+            border_width=0,
+        )
+        self.main_container.pack(fill="both", expand=True)
 
         self._build_header()
         self._build_volume_selector()
+        self._build_actions()
         self._build_results_area()
 
-        # ----- Zone d'actions (étape 5) -----
-        # Rempli plus tard
-
-        # ----- Premier scan des volumes -----
+        # Premier scan
         self._check_volumes()
         self._schedule_volume_check()
 
@@ -108,7 +111,7 @@ class USBFlossApp(ctk.CTk):
     # En-tête (logo)
     # ------------------------------------------------------------------
     def _build_header(self):
-        self.header = ctk.CTkFrame(self, fg_color="transparent")
+        self.header = ctk.CTkFrame(self.main_container, fg_color="transparent")
         self.header.pack(fill="x", padx=FRAME_PADDING, pady=(FRAME_PADDING, 4))
 
         if os.path.exists(LOGO_PATH):
@@ -144,23 +147,21 @@ class USBFlossApp(ctk.CTk):
     # Sélection du volume
     # ------------------------------------------------------------------
     def _build_volume_selector(self):
-        frame = ctk.CTkFrame(self, fg_color="transparent")
+        frame = ctk.CTkFrame(self.main_container, fg_color="transparent")
         frame.pack(fill="x", padx=FRAME_PADDING, pady=(10, 10))
 
         block = ctk.CTkFrame(frame, fg_color="transparent")
         block.pack(anchor="center", pady=6)
 
         block.grid_columnconfigure(0, weight=0)
-        block.grid_columnconfigure(1, weight=0)
 
-        # ----- Cellule : label + combo -----
         cell = ctk.CTkFrame(block, fg_color="transparent")
         cell.grid(row=0, column=0, sticky="ew")
 
         ctk.CTkLabel(
             cell,
             text="Volume à nettoyer",
-            font=(FONT_MAIN, 12),           # typo réduite (avant : 14)
+            font=(FONT_MAIN, 12),
             text_color=LOGO_ACCENT,
             anchor="center",
         ).pack(anchor="center", pady=(0, LABEL_PADDING_BOTTOM))
@@ -186,21 +187,12 @@ class USBFlossApp(ctk.CTk):
         )
         self.combo_volume.pack(anchor="center")
 
-        # ----- Bouton Nettoyer (fonctionnel à l'étape 5) -----
-        btns = ctk.CTkFrame(block, fg_color="transparent")
-        btns.grid(row=0, column=1, sticky="s", padx=(COMBO_PADDING_X, 0))
-
-        self._btn(btns, "Nettoyer", self.run_clean, small=True).pack(side="left", padx=BTN_SPACING)
-
     # ------------------------------------------------------------------
-    # Zone de résultats (frame simple, pas scrollable)
+    # Zone de résultats
     # ------------------------------------------------------------------
     def _build_results_area(self):
-        # Le CTkScrollableFrame affiche toujours sa barre. On utilise donc
-        # un CTkFrame classique : si la liste dépasse, on tronque proprement
-        # (les fichiers parasites sont rares sur une clé de moins de 256 Go).
         self.results_frame = ctk.CTkFrame(
-            self,
+            self.main_container,
             fg_color=BG_CARD,
             corner_radius=10,
             border_color=CYAN_DARK,
@@ -210,14 +202,46 @@ class USBFlossApp(ctk.CTk):
             fill="both",
             expand=True,
             padx=FRAME_PADDING,
-            pady=(10, FRAME_PADDING_BOTTOM),
+            pady=(10, 10),
         )
 
-        # Message d'invite
         self._show_message("Sélectionne un volume puis clique sur Analyser.", italic=True)
 
     # ------------------------------------------------------------------
-    # Scan périodique des volumes
+    # Actions (bouton Nettoyer + case Éjecter)
+    # ------------------------------------------------------------------
+    def _build_actions(self):
+        frame = ctk.CTkFrame(self.main_container, fg_color="transparent")
+        frame.pack(
+            fill="x",
+            side="bottom",
+            padx=FRAME_PADDING,
+            pady=(0, FRAME_PADDING_BOTTOM),
+        )
+
+        self.btn_clean = self._btn(frame, "Nettoyer", self.run_clean, small=True)
+        self.btn_clean.configure(state="disabled", border_color=BTN_DISABLED)
+        self.btn_clean.pack(side="left")
+
+        self.var_eject = ctk.BooleanVar(value=False)
+        self.chk_eject = ctk.CTkCheckBox(
+            frame,
+            text="Éjecter après nettoyage",
+            variable=self.var_eject,
+            font=(FONT_MAIN, 12),
+            text_color=TEXT_WHITE,
+            fg_color=CYAN_DARK,
+            hover_color=CYAN,
+            border_color=CYAN_BRIGHT,
+            border_width=2,
+            corner_radius=6,
+            checkbox_width=20,
+            checkbox_height=20,
+        )
+        self.chk_eject.pack(side="right")
+
+    # ------------------------------------------------------------------
+    # Scan périodique
     # ------------------------------------------------------------------
     def _schedule_volume_check(self):
         self._check_volumes()
@@ -225,7 +249,6 @@ class USBFlossApp(ctk.CTk):
 
     def _check_volumes(self):
         new_volumes = list_volumes()
-
         new_state = tuple((str(v), s) for v, s in new_volumes)
         if new_state == self._last_volumes_state:
             return
@@ -235,6 +258,7 @@ class USBFlossApp(ctk.CTk):
 
         self._clear_results()
         self._set_results_border(active=False)
+        self._disable_clean_button()
 
         if not new_volumes:
             self.combo_volume.configure(values=["Aucun volume détecté"])
@@ -249,7 +273,6 @@ class USBFlossApp(ctk.CTk):
         if current not in labels:
             self.combo_volume.set(labels[0])
 
-        # ---- Analyse AUTOMATIQUE du volume sélectionné ----
         self._analyse_current_volume()
 
     # ------------------------------------------------------------------
@@ -262,6 +285,7 @@ class USBFlossApp(ctk.CTk):
             self._clear_results()
             self._show_message("Aucun volume à analyser.", italic=True)
             self._set_results_border(active=False)
+            self._disable_clean_button()
             return
 
         vol_path = None
@@ -275,14 +299,19 @@ class USBFlossApp(ctk.CTk):
             self._clear_results()
             self._show_message("Volume introuvable.", italic=True)
             self._set_results_border(active=False)
+            self._disable_clean_button()
             return
 
         junk = scan(vol_path)
         self._clear_results()
 
+        self.current_junk = junk
+        self.current_volume = vol_path
+
         if not junk:
             self._show_message("Aucun fichier parasite trouvé. La clé est propre.", italic=True)
             self._set_results_border(active=False)
+            self._disable_clean_button()
             return
 
         self._show_message(f"{len(junk)} élément(s) trouvé(s) :", bold=True)
@@ -292,12 +321,65 @@ class USBFlossApp(ctk.CTk):
             self._add_result_line(f"[{kind}] {rel}")
 
         self._set_results_border(active=True)
+        self._enable_clean_button()
 
     # ------------------------------------------------------------------
-    # Action : Nettoyer (placeholder pour l'étape 5)
+    # Action : Nettoyer
     # ------------------------------------------------------------------
     def run_clean(self):
-        print("[Nettoyer] Fonctionnalité à venir à l'étape 5.")
+        if not self.current_junk or self.current_volume is None:
+            return
+
+        n = len(self.current_junk)
+        vol_name = self.current_volume.name
+
+        reponse = messagebox.askyesno(
+            "USB-Floss",
+            f"Supprimer {n} élément(s) parasite(s) sur {vol_name} ?",
+        )
+        if not reponse:
+            return
+
+        ok, ko = delete(self.current_junk, self.current_volume)
+
+        if ko == 0:
+            messagebox.showinfo("USB-Floss", f"{ok} élément(s) supprimé(s).")
+        else:
+            messagebox.showwarning(
+                "USB-Floss",
+                f"{ok} supprimé(s), {ko} échec(s).\n"
+                "Certains fichiers n'ont pas pu être supprimés.",
+            )
+
+        if self.var_eject.get():
+            self._eject_volume(self.current_volume)
+
+        self._last_volumes_state = None
+        self._check_volumes()
+
+    # ------------------------------------------------------------------
+    # Éjection
+    # ------------------------------------------------------------------
+    def _eject_volume(self, volume_path):
+        try:
+            if sys.platform == "darwin":
+                subprocess.run(
+                    ["diskutil", "eject", str(volume_path)],
+                    check=True,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+        except Exception as e:
+            print(f"Erreur éjection : {e}")
+
+    # ------------------------------------------------------------------
+    # Helpers bouton
+    # ------------------------------------------------------------------
+    def _enable_clean_button(self):
+        self.btn_clean.configure(state="normal", border_color=CYAN_BRIGHT)
+
+    def _disable_clean_button(self):
+        self.btn_clean.configure(state="disabled", border_color=BTN_DISABLED)
 
     # ------------------------------------------------------------------
     # Helpers affichage
