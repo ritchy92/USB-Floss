@@ -15,6 +15,11 @@ JUNK_FILES = {
     ".DS_Store",
     ".apdisk",
     ".VolumeIcon.icns",
+    ".localized",
+    ".AppleDouble",
+    ".AppleDB",
+    ".AppleShare PDS",
+    ".com.apple.timemachine.donotpresent",
 }
 
 JUNK_DIRS = {
@@ -23,6 +28,7 @@ JUNK_DIRS = {
     ".fseventsd",
     ".TemporaryItems",
     ".DocumentRevisions-V100",
+    ".AppleDB",
 }
 
 JUNK_PREFIXES = (

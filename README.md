@@ -1,4 +1,5 @@
 # USB-Floss
+<img src="logo.png" alt="Logo USB-Floss" width="600">
 
 Un petit utilitaire qui nettoie les fichiers inutiles créés par macOS
 sur une clé USB ou un disque externe.

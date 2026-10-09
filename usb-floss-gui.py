@@ -43,6 +43,7 @@ CYAN_BRIGHT = "#3BFCFF"
 CYAN_HOVER = "#23A7C8"
 TEXT_WHITE = "#FFFFFF"
 TEXT_GREY = "#8A9AA9"
+TEXT_DIM = "#5A6A78"
 BTN_DISABLED = "#3A4A55"
 
 # Dimensions des boutons
@@ -64,9 +65,20 @@ FRAME_PADDING_BOTTOM = 60
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 LOGO_PATH = os.path.join(SCRIPT_DIR, "logo.png")
 
-LOGO_WIDTH = 140
+LOGO_WIDTH = 480
 COMBO_W = 200
 VOLUME_CHECK_INTERVAL = 2000
+
+# Dossiers protégés par macOS : détectés mais non supprimables
+PROTECTED_NAMES = {
+    ".Spotlight-V100",
+    ".Trashes",
+    ".fseventsd",
+    ".DocumentRevisions-V100",
+}
+
+# Version affichée dans la fenêtre d'aide
+APP_VERSION = "0.5"
 
 
 # ------------------------------------------------------------------
@@ -88,16 +100,6 @@ class USBFlossApp(ctk.CTk):
         self.current_junk = []
         self.current_volume = None
 
-        # ----- Conteneur principal avec liseré cyan -----
-        self.main_container = ctk.CTkFrame(
-            self,
-            fg_color=BG_MAIN,
-            corner_radius=0,
-            border_color=CYAN_BRIGHT,
-            border_width=0,
-        )
-        self.main_container.pack(fill="both", expand=True)
-
         self._build_header()
         self._build_volume_selector()
         self._build_actions()
@@ -111,8 +113,8 @@ class USBFlossApp(ctk.CTk):
     # En-tête (logo)
     # ------------------------------------------------------------------
     def _build_header(self):
-        self.header = ctk.CTkFrame(self.main_container, fg_color="transparent")
-        self.header.pack(fill="x", padx=FRAME_PADDING, pady=(FRAME_PADDING, 4))
+        self.header = ctk.CTkFrame(self, fg_color="transparent")
+        self.header.pack(fill="x", padx=10, pady=(FRAME_PADDING, 4))
 
         if os.path.exists(LOGO_PATH):
             try:
@@ -147,7 +149,7 @@ class USBFlossApp(ctk.CTk):
     # Sélection du volume
     # ------------------------------------------------------------------
     def _build_volume_selector(self):
-        frame = ctk.CTkFrame(self.main_container, fg_color="transparent")
+        frame = ctk.CTkFrame(self, fg_color="transparent")
         frame.pack(fill="x", padx=FRAME_PADDING, pady=(10, 10))
 
         block = ctk.CTkFrame(frame, fg_color="transparent")
@@ -192,7 +194,7 @@ class USBFlossApp(ctk.CTk):
     # ------------------------------------------------------------------
     def _build_results_area(self):
         self.results_frame = ctk.CTkFrame(
-            self.main_container,
+            self,
             fg_color=BG_CARD,
             corner_radius=10,
             border_color=CYAN_DARK,
@@ -205,18 +207,43 @@ class USBFlossApp(ctk.CTk):
             pady=(10, 10),
         )
 
-        self._show_message("Sélectionne un volume puis clique sur Analyser.", italic=True)
+        self._show_message("En attente d'un volume...", italic=True)
 
     # ------------------------------------------------------------------
-    # Actions (bouton Nettoyer + case Éjecter)
+    # Zone d'actions
     # ------------------------------------------------------------------
     def _build_actions(self):
-        frame = ctk.CTkFrame(self.main_container, fg_color="transparent")
+        # ---- Ligne 1 (la plus basse) : bouton « ? » en bas à droite ----
+        help_frame = ctk.CTkFrame(self, fg_color="transparent")
+        help_frame.pack(
+            fill="x",
+            side="bottom",
+            padx=FRAME_PADDING,
+            pady=(0, 20),
+        )
+
+        self.btn_help = ctk.CTkButton(
+            help_frame,
+            text="?",
+            font=(FONT_MAIN, 13, "bold"),
+            width=24,
+            height=24,
+            corner_radius=12,
+            fg_color="transparent",
+            border_width=0,
+            text_color=CYAN,
+            hover_color=CYAN_HOVER,
+            command=self._open_help,
+        )
+        self.btn_help.pack(side="right")
+
+        # ---- Ligne 2 (au-dessus) : Nettoyer + Éjecter ----
+        frame = ctk.CTkFrame(self, fg_color="transparent")
         frame.pack(
             fill="x",
             side="bottom",
             padx=FRAME_PADDING,
-            pady=(0, FRAME_PADDING_BOTTOM),
+            pady=(0, 20),
         )
 
         self.btn_clean = self._btn(frame, "Nettoyer", self.run_clean, small=True)
@@ -305,8 +332,10 @@ class USBFlossApp(ctk.CTk):
         junk = scan(vol_path)
         self._clear_results()
 
-        self.current_junk = junk
         self.current_volume = vol_path
+
+        to_delete = [p for p in junk if not self._is_protected(p)]
+        self.current_junk = to_delete
 
         if not junk:
             self._show_message("Aucun fichier parasite trouvé. La clé est propre.", italic=True)
@@ -316,12 +345,21 @@ class USBFlossApp(ctk.CTk):
 
         self._show_message(f"{len(junk)} élément(s) trouvé(s) :", bold=True)
         for path in junk:
-            kind = "dossier" if path.is_dir() else "fichier"
-            rel = path.relative_to(vol_path)
-            self._add_result_line(f"[{kind}] {rel}")
+            rel = str(path.relative_to(vol_path))
+            if self._is_protected(path):
+                self._add_result_line(f"{rel}    (ignoré)", ignored=True)
+            else:
+                self._add_result_line(rel)
 
         self._set_results_border(active=True)
-        self._enable_clean_button()
+
+        if to_delete:
+            self._enable_clean_button()
+        else:
+            self._disable_clean_button()
+
+    def _is_protected(self, path):
+        return path.name in PROTECTED_NAMES
 
     # ------------------------------------------------------------------
     # Action : Nettoyer
@@ -335,7 +373,7 @@ class USBFlossApp(ctk.CTk):
 
         reponse = messagebox.askyesno(
             "USB-Floss",
-            f"Supprimer {n} élément(s) parasite(s) sur {vol_name} ?",
+            f"Supprimer {n} élément(s) sur {vol_name} ?",
         )
         if not reponse:
             return
@@ -373,6 +411,114 @@ class USBFlossApp(ctk.CTk):
             print(f"Erreur éjection : {e}")
 
     # ------------------------------------------------------------------
+    # Fenêtre d'aide
+    # ------------------------------------------------------------------
+    def _open_help(self):
+        popup = ctk.CTkToplevel(self)
+        popup.title("À propos — USB-Floss")
+        popup.resizable(False, False)
+        popup.transient(self)
+        popup.grab_set()
+        popup.configure(fg_color=BG_MAIN)
+
+        self.update_idletasks()
+        w_popup, h_popup = 460, 520
+        x = self.winfo_x() + (self.winfo_width() - w_popup) // 2
+        y = self.winfo_y() + (self.winfo_height() - h_popup) // 2
+        popup.geometry(f"{w_popup}x{h_popup}+{max(x, 0)}+{max(y, 0)}")
+
+        frame = ctk.CTkScrollableFrame(
+            popup,
+            fg_color=BG_CARD,
+            corner_radius=10,
+            scrollbar_button_color=CYAN_DARK,
+            scrollbar_button_hover_color=CYAN,
+        )
+        frame.pack(fill="both", expand=True, padx=15, pady=(15, 8))
+
+        contenu = [
+            ("title", "USB-Floss"),
+            ("text", f"Version {APP_VERSION}"),
+            ("space", ""),
+            ("text", "Nettoie une clé USB des fichiers inutiles"),
+            ("text", "créés par macOS, pour la donner à quelqu'un"),
+            ("text", "qui utilise Windows."),
+            ("space", ""),
+            ("title2", "Comment l'utiliser"),
+            ("bullet", "1. Branche une clé USB."),
+            ("bullet", "2. Elle apparaît automatiquement dans la liste."),
+            ("bullet", "3. L'analyse se lance toute seule."),
+            ("bullet", "4. Clique sur Nettoyer pour supprimer les fichiers."),
+            ("space", ""),
+            ("title2", "Fichiers ignorés"),
+            ("text", "Certains dossiers protégés par macOS (comme"),
+            ("text", ".Spotlight-V100 et .fseventsd) ne peuvent pas être"),
+            ("text", "supprimés. Ils sont marqués « (ignoré) » et laissés"),
+            ("text", "en place. C'est normal et sans danger."),
+            ("space", ""),
+            ("title2", "Limite de taille"),
+            ("text", "Seules les clés USB et disques externes de moins"),
+            ("text", "de 256 Go sont proposés automatiquement."),
+            ("space", ""),
+            ("sep", ""),
+            ("text", "Richard Cogne"),
+            ("text", "© 2026 — Licence MIT"),
+            ("space", ""),
+            ("code", "github.com/ritchy92/USB-Floss"),
+        ]
+
+        for kind, txt in contenu:
+            if kind == "space":
+                ctk.CTkLabel(frame, text="", height=6).pack()
+            elif kind == "title":
+                ctk.CTkLabel(
+                    frame, text=txt,
+                    font=(FONT_MAIN, 18, "bold"),
+                    text_color=CYAN, anchor="w",
+                ).pack(fill="x", pady=(4, 2))
+            elif kind == "title2":
+                ctk.CTkLabel(
+                    frame, text=txt,
+                    font=(FONT_MAIN, 14, "bold"),
+                    text_color=LOGO_ACCENT, anchor="w",
+                ).pack(fill="x", pady=(8, 2))
+            elif kind == "bullet":
+                ctk.CTkLabel(
+                    frame, text="    " + txt,
+                    font=(FONT_MAIN, 12),
+                    text_color=TEXT_WHITE, anchor="w", justify="left",
+                ).pack(fill="x")
+            elif kind == "code":
+                ctk.CTkLabel(
+                    frame, text=txt,
+                    font=(FONT_MONO, 11),
+                    text_color="#7FE0E8", anchor="w",
+                ).pack(fill="x", padx=(8, 0))
+            elif kind == "sep":
+                ctk.CTkFrame(frame, height=1, fg_color="#2A3A48").pack(fill="x", pady=8)
+            else:
+                ctk.CTkLabel(
+                    frame, text=txt,
+                    font=(FONT_MAIN, 12),
+                    text_color=TEXT_WHITE, anchor="w", justify="left",
+                ).pack(fill="x")
+
+        ctk.CTkButton(
+            popup,
+            text="Fermer",
+            font=(FONT_MAIN, 13, "bold"),
+            width=140,
+            height=36,
+            corner_radius=18,
+            fg_color="transparent",
+            border_color=CYAN_BRIGHT,
+            border_width=1,
+            text_color=TEXT_WHITE,
+            hover_color=CYAN_HOVER,
+            command=popup.destroy,
+        ).pack(pady=(0, 15))
+
+    # ------------------------------------------------------------------
     # Helpers bouton
     # ------------------------------------------------------------------
     def _enable_clean_button(self):
@@ -408,12 +554,14 @@ class USBFlossApp(ctk.CTk):
         )
         lbl.pack(fill="x", padx=8, pady=(4, 4))
 
-    def _add_result_line(self, text):
+    def _add_result_line(self, text, ignored=False):
+        color = TEXT_DIM if ignored else TEXT_WHITE
+        style = "italic" if ignored else "normal"
         lbl = ctk.CTkLabel(
             self.results_frame,
             text=text,
-            font=(FONT_MONO, 11),
-            text_color=TEXT_WHITE,
+            font=(FONT_MONO, 11, style),
+            text_color=color,
             anchor="w",
         )
         lbl.pack(fill="x", padx=8, pady=1)
