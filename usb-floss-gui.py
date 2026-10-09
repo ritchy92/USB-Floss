@@ -67,7 +67,8 @@ LOGO_PATH = os.path.join(SCRIPT_DIR, "logo.png")
 
 LOGO_WIDTH = 480
 COMBO_W = 200
-VOLUME_CHECK_INTERVAL = 2000
+VOLUME_CHECK_INTERVAL = 2000      # vérification des volumes toutes les 2 s
+RESCAN_INTERVAL = 5000            # rescan complet du contenu toutes les 5 s
 
 # Dossiers protégés par macOS : détectés mais non supprimables
 PROTECTED_NAMES = {
@@ -97,6 +98,7 @@ class USBFlossApp(ctk.CTk):
         self._logo_image = None
         self.volumes = []
         self._last_volumes_state = None
+        self._last_junk_signature = None
         self.current_junk = []
         self.current_volume = None
 
@@ -114,7 +116,7 @@ class USBFlossApp(ctk.CTk):
     # ------------------------------------------------------------------
     def _build_header(self):
         self.header = ctk.CTkFrame(self, fg_color="transparent")
-        self.header.pack(fill="x", padx=10, pady=(FRAME_PADDING, 4))
+        self.header.pack(fill="x", padx=0, pady=(FRAME_PADDING, 4))
 
         if os.path.exists(LOGO_PATH):
             try:
@@ -272,11 +274,14 @@ class USBFlossApp(ctk.CTk):
     # ------------------------------------------------------------------
     def _schedule_volume_check(self):
         self._check_volumes()
+        self._rescan_content()
         self.after(VOLUME_CHECK_INTERVAL, self._schedule_volume_check)
 
     def _check_volumes(self):
+        """Détecte les branchements / débranchements de volumes."""
         new_volumes = list_volumes()
         new_state = tuple((str(v), s) for v, s in new_volumes)
+
         if new_state == self._last_volumes_state:
             return
 
@@ -286,6 +291,7 @@ class USBFlossApp(ctk.CTk):
         self._clear_results()
         self._set_results_border(active=False)
         self._disable_clean_button()
+        self._last_junk_signature = None
 
         if not new_volumes:
             self.combo_volume.configure(values=["Aucun volume détecté"])
@@ -300,6 +306,33 @@ class USBFlossApp(ctk.CTk):
         if current not in labels:
             self.combo_volume.set(labels[0])
 
+        self._analyse_current_volume()
+
+    def _rescan_content(self):
+        """Relance un scan complet du volume courant pour détecter
+        les changements de contenu (fichiers ajoutés ou supprimés)."""
+        selected = self.combo_volume.get()
+
+        if not selected or selected == "Aucun volume détecté":
+            return
+
+        vol_path = None
+        for vol, size in self.volumes:
+            label = f"{vol.name}  ({format_size(size)})"
+            if label == selected:
+                vol_path = vol
+                break
+
+        if vol_path is None:
+            return
+
+        junk = scan(vol_path)
+        signature = tuple(sorted(str(p.relative_to(vol_path)) for p in junk))
+
+        if signature == self._last_junk_signature:
+            return
+
+        self._last_junk_signature = signature
         self._analyse_current_volume()
 
     # ------------------------------------------------------------------
@@ -393,6 +426,7 @@ class USBFlossApp(ctk.CTk):
             self._eject_volume(self.current_volume)
 
         self._last_volumes_state = None
+        self._last_junk_signature = None
         self._check_volumes()
 
     # ------------------------------------------------------------------

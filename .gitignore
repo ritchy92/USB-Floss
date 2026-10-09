@@ -6,3 +6,9 @@ __pycache__/
 *.pyc
 *.pyo
 *.pyd
+# PyInstaller
+build/
+dist/
+*.spec
+# Icône macOS (généré)
+icon.iconset/
