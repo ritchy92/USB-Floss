@@ -1,122 +1,140 @@
+<img src="logo.png" alt="USB-Floss" width="800">
+
 # USB-Floss
-<img src="logo.png" alt="Logo USB-Floss" width="600">
 
 Un petit utilitaire qui nettoie les fichiers inutiles créés par macOS
 sur une clé USB ou un disque externe.
 
 Le nom vient du « fil dentaire » (dental floss) : l'outil nettoie les
-recoins invisibles de la clé, là où l'utilisateur normal ne regarde pas.
-Et « FLOSS » veut aussi dire Free/Libre and Open Source Software — ce
-projet l'est.
+recoins invisibles de la clé, là où l'utilisateur normal ne regarde
+pas. Et « FLOSS » veut aussi dire Free/Libre and Open Source Software —
+ce projet l'est.
 
 ## Le problème
 
 Quand on branche une clé USB sur un Mac, macOS y laisse des fichiers
 cachés invisibles :
 
-- .DS_Store — cache d'affichage du Finder
-- ._* — métadonnées AppleDouble attachées à chaque fichier
-- .Spotlight-V100/ — index de recherche Spotlight
-- .Trashes/ — corbeille macOS
-- .fseventsd/ — journal du système de fichiers
+- `.DS_Store` — cache d'affichage du Finder
+- `._*` — métadonnées AppleDouble attachées à chaque fichier
+- `.Spotlight-V100/` — index de recherche Spotlight
+- `.Trashes/` — corbeille macOS
+- `.fseventsd/` — journal du système de fichiers
+- `.DocumentRevisions-V100/` — historique des versions
+- `.apdisk`, `.VolumeIcon.icns`, `.localized`, `.AppleDB`, etc.
 
-Ces fichiers ne servent à rien sous Windows ou Linux. Ils encombrent la
-clé, polluent les listes de fichiers, et parfois empêchent une copie
-propre.
+Ces fichiers ne servent à rien sous Windows ou Linux. Ils encombrent
+la clé, polluent les listes de fichiers, et parfois empêchent une
+copie propre.
 
-## Utilisation
+## Deux façons d'utiliser USB-Floss
 
-### Mode interactif (le plus simple)
+### Interface graphique (recommandée pour les utilisateurs)
 
-    python3 USB-Floss.py
+Lance l'application :
 
-Le script liste les volumes éligibles et te demande lequel nettoyer :
+    python3 usb-floss-gui.py
 
-    Volumes détectés :
-      1. DRIVE64            (32 Go)
+Une fenêtre s'ouvre, détecte automatiquement les clés USB branchées,
+et propose de nettoyer celle que tu sélectionnes. Aucune commande à
+taper.
 
-    Quel volume nettoyer ? [1-1]
+### Ligne de commande (pour les scripts et usages avancés)
 
-Aucune commande à retenir, aucun chemin à taper.
+Le script `usbfloss.py` fonctionne aussi tout seul, en Terminal.
 
-### Mode direct (chemin précis)
+**Mode interactif :**
 
-    python3 USB-Floss.py /Volumes/NOM_DE_LA_CLE
+    python3 usbfloss.py
 
-Utile si tu connais déjà le chemin de ta clé, ou si tu veux cibler
-un volume qui n'est pas proposé par le mode interactif (voir plus bas).
+Le script liste les volumes éligibles et te demande lequel nettoyer.
 
-### Aperçu (ne supprime rien)
+**Mode direct (chemin précis) :**
 
-Par défaut, toutes les commandes ci-dessus sont en mode aperçu :
-elles affichent la liste des fichiers parasites trouvés, mais ne
-suppriment rien.
+    python3 usbfloss.py /Volumes/NOM_DE_LA_CLE
 
-### Nettoyage avec confirmation
+**Suppression avec confirmation :**
 
-Ajoute --delete pour supprimer réellement :
+    python3 usbfloss.py /Volumes/NOM_DE_LA_CLE --delete
 
-    python3 USB-Floss.py --delete
-    python3 USB-Floss.py /Volumes/NOM_DE_LA_CLE --delete
+**Suppression sans confirmation :**
 
-Le script affiche la liste, puis demande confirmation avant de
-supprimer.
+    python3 usbfloss.py /Volumes/NOM_DE_LA_CLE --delete --yes
 
-### Nettoyage sans confirmation
+## Volumes proposés automatiquement
 
-    python3 USB-Floss.py /Volumes/NOM_DE_LA_CLE --delete --yes
-
-Pour automatiser (scripts, cron, etc.).
-
-## Volumes proposés en mode interactif
-
-Le mode interactif ne propose pas tous les volumes montés. Sont
-automatiquement exclus :
+Le mode interactif (et l'interface graphique) ne proposent pas tous
+les volumes montés. Sont exclus :
 
 - Le disque de démarrage
-- Les volumes Time Machine (détectés via leur marqueur système)
-- Les volumes système (com.apple.TimeMachine.localsnapshots)
+- Les volumes Time Machine
+- Les volumes système (`com.apple.TimeMachine.localsnapshots`)
 - Les volumes de plus de 256 Go
 
-Cette limite existe parce qu'USB-Floss est prévu pour les clés USB
-et les petits disques externes qui servent de navette entre Mac et
-PC. Un gros disque de stockage (1 To ou plus) n'a pas vocation à
-être nettoyé de cette façon : il est utilisé différemment, et le
-risque de manipuler un volume contenant des données importantes
-n'en vaut pas la peine.
+Cette limite existe parce qu'USB-Floss est prévu pour les clés USB et
+les petits disques externes qui servent de navette entre Mac et PC.
+Un gros disque de stockage (1 To ou plus) n'a pas vocation à être
+nettoyé de cette façon : il est utilisé différemment, et le risque de
+manipuler un volume contenant des données importantes n'en vaut pas
+la peine.
 
 Pour cibler malgré tout un gros volume, utilise le mode direct en
 indiquant son chemin :
 
-    python3 USB-Floss.py /Volumes/NOM_DU_GROS_DISQUE
+    python3 usbfloss.py /Volumes/NOM_DU_GROS_DISQUE
 
-Le script fera le scan normalement, sans filtre de taille. Il restera
-en mode aperçu tant que tu n'ajoutes pas --delete.
+## Fichiers protégés par macOS
 
-## Prérequis
+Certains dossiers créés par macOS sur une clé USB sont protégés par
+le système et ne peuvent pas être supprimés par un utilisateur normal :
 
-Python 3.10 ou supérieur. Aucune dépendance externe.
+- `.Spotlight-V100`
+- `.Trashes`
+- `.fseventsd`
+- `.DocumentRevisions-V100`
+
+USB-Floss les détecte et les affiche, mais les marque `(ignoré)` et
+ne tente pas de les supprimer. C'est normal : macOS les recréera de
+toute façon au prochain branchement, et ils ne gênent en rien
+l'utilisation de la clé sur un PC.
+
+## Installation
+
+**Prérequis :** Python 3.10 ou supérieur.
+
+Pour l'interface graphique, deux dépendances externes :
+
+    pip3 install customtkinter pillow
+
+Le script en ligne de commande (`usbfloss.py`) n'a **aucune**
+dépendance externe : il utilise uniquement la bibliothèque standard
+de Python.
 
 ## Comment retrouver le chemin d'une clé
 
-Sur macOS, les clés sont montées dans /Volumes/. Pour voir la liste :
+**macOS** : les clés sont montées dans `/Volumes/`. Pour voir la liste :
 
     ls /Volumes
 
-Sur Windows, le chemin ressemble à D:\ ou E:\.
+**Windows** : le chemin ressemble à `D:\` ou `E:\`.
 
-Sur Linux, /media/utilisateur/NOM_DE_LA_CLE ou /mnt/.
+**Linux** : `/media/utilisateur/NOM_DE_LA_CLE` ou `/mnt/`.
 
 ## Notes
 
-- macOS recrée automatiquement .Spotlight-V100 et .fseventsd quand la
-  clé est rebranchée sur un Mac. Il est donc conseillé de relancer
-  USB-Floss juste avant de donner la clé à quelqu'un qui utilise
+- macOS recrée automatiquement `.Spotlight-V100` et `.fseventsd` quand
+  la clé est rebranchée sur un Mac. Il est donc conseillé de relancer
+  USB-Floss **juste avant** de donner la clé à quelqu'un qui utilise
   Windows.
-- Les fichiers supprimés ne sont pas mis à la corbeille : la suppression
-  est définitive. Les fichiers concernés n'ayant aucune valeur (ce sont
-  des caches), il n'y a pas de risque de perte de données.
+- Les fichiers supprimés ne sont pas mis à la corbeille : la
+  suppression est définitive. Les fichiers concernés n'ayant aucune
+  valeur (ce sont des caches), il n'y a pas de risque de perte de
+  données.
 
 ## Licence
 
-MIT — voir le fichier LICENSE.
+MIT — voir le fichier [LICENSE](LICENSE).
+
+---
+
+Créé par Richard Cogne — 2026
